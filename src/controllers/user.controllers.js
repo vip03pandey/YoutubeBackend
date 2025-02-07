@@ -24,7 +24,6 @@ const registeredUsers = asyncHandler(async (req, res) => {
     //console.log(req.files);
 
     const avatarLocalPath = req.files?.avatar[0]?.path;
-    //const coverImageLocalPath = req.files?.coverImage[0]?.path;
 
     let coverImageLocalPath;
     if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
@@ -131,4 +130,46 @@ const loginUser = asyncHandler(async (req, res) => {
     }
 })
 
-export { registeredUsers,generateAccessAndRefreshToken,loginUser };
+const logoutUser = asyncHandler(async (req, res) => {
+   await User.findByIdAndUpdate(req.user._id,{
+       refreshToken:""
+   },{new:true})
+   const options={
+       httpOnly:true,
+       secure:process.env.NODE_ENV==="production",
+   }
+   return res.status(200).clearCookie("refreshToken",options).clearCookie("refreshToken",options).json(new ApiResponse(200,"User logged out successfully"))
+
+})
+
+const refreshAccessToken = asyncHandler(async (req, res) => {
+   const incomingRefreshToken=req.body.refreshToken  || req.cookies.refreshToken
+   if(!incomingRefreshToken){
+       throw new ApiError(400,"Refresh token is required")
+   }
+   try{
+       const decodedToken= jwt.verify(incomingRefreshToken,process.env.REFRESH_TOKEN_SECRET)
+       const user= await User.findById(decodedToken?._id)
+       if(!user){
+        throw new ApiError(404,"Invalid refresh token")
+       }
+       if(incomingRefreshToken!==user.refreshToken){
+           throw new ApiError(401,"Invalid refresh token")
+       }
+       const options={
+        httpOnly:true,
+        secure:process.env.NODE_ENV==="production",
+       }
+       const {AccessToken,RefreshToken:newRefreshToken}=await generateAccessAndRefreshToken(user._id)
+       res.cookie("refreshToken",newRefreshToken,options)
+       return res.status(200).json(
+           new ApiResponse(200,{user,AccessToken},"Refreshed access token successfully")
+       )
+
+   }
+   catch(error){
+       throw new ApiError(500,"Error refreshing access token")
+   }
+})
+
+export { registeredUsers,generateAccessAndRefreshToken,loginUser,refreshAccessToken,logoutUser };
